@@ -38,15 +38,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} antialiased`}
       >
-        <ThemeProvider>
-          <AnalyticsProvider>
-            <AuthProvider>
-              <ToastProvider>
-                <NotificationProvider>{children}</NotificationProvider>
-              </ToastProvider>
-            </AuthProvider>
-          </AnalyticsProvider>
-        </ThemeProvider>
+        <ToastProvider>
+          <NotificationProvider>
+            <ThemeProvider>
+              <AnalyticsProvider>
+                <AuthProvider>{children}</AuthProvider>
+              </AnalyticsProvider>
+            </ThemeProvider>
+          </NotificationProvider>
+        </ToastProvider>
       </body>
     </html>
   );
