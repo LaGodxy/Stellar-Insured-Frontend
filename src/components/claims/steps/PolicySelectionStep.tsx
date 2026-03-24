@@ -1,10 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Select } from '@/components/ui/Select';
 import { Card } from '@/components/ui/Card';
-import { mockPolicies } from '@/data/mockData';
+import { policyService } from '@/services/policyService';
 import type { StepValidation } from '@/hooks/useMultiStepForm';
+import type { Policy } from '@/services/types/policy.types';
 
 export interface PolicySelectionData {
   policyId: string;
@@ -31,7 +32,32 @@ export const PolicySelectionStep: React.FC<PolicySelectionStepProps> = ({
   onDataChange,
   onValidation
 }) => {
-  const selectedPolicy = mockPolicies.find(p => p.id === data.policyId);
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const selectedPolicy = policies.find(p => p.id === data.policyId);
+
+  // Load policies from service
+  useEffect(() => {
+    const loadPolicies = async () => {
+      try {
+        setLoading(true);
+        const result = await policyService.getPolicies({ status: 'active' });
+        if (result.success) {
+          setPolicies(result.data.policies);
+        } else {
+          setError(result.error || 'Failed to load policies');
+        }
+      } catch (err) {
+        setError('Failed to load policies');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPolicies();
+  }, []);
 
   // Validate step
   React.useEffect(() => {
@@ -63,12 +89,13 @@ export const PolicySelectionStep: React.FC<PolicySelectionStepProps> = ({
         <Select
           label="Select Policy"
           placeholder="Choose a policy..."
-          options={mockPolicies.map(p => ({
+          options={policies.map(p => ({
             value: p.id,
             label: `${p.name} (${p.policyNumber})`
           }))}
           value={data.policyId}
-          onChange={(e) => onDataChange({ policyId: e.target.value })}
+          onChange={(e: any) => onDataChange({ policyId: e.target.value })}
+          disabled={loading}
         />
 
         {/* Selected Policy Details */}
@@ -108,14 +135,14 @@ export const PolicySelectionStep: React.FC<PolicySelectionStepProps> = ({
           placeholder="Select the type of incident..."
           options={incidentTypes}
           value={data.incidentType}
-          onChange={(e) => onDataChange({ incidentType: e.target.value })}
+          onChange={(e: any) => onDataChange({ incidentType: e.target.value })}
         />
 
         {/* Incident Type Description */}
         {data.incidentType && (
           <Card className="p-4 bg-cyan-500/5 border-cyan-500/20">
             <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-cyan-500/20 rounded-full flex items-center justify-center mt-0.5">
+              <div className="shrink-0 w-6 h-6 bg-cyan-500/20 rounded-full flex items-center justify-center mt-0.5">
                 <svg className="w-3 h-3 text-cyan-400" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                 </svg>

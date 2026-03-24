@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { PolicyCard } from "@/components/policies/PolicyCard";
-import { mockPolicies } from "@/data/mockPolicies";
+import { policyService } from "@/services/policyService";
 import { Search, Plus } from "lucide-react";
 import { Pagination } from "@/components/Pagination";
 import { FilterDropdown } from "@/components/FilterDropdown";
@@ -11,6 +11,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { WalletStatus } from "@/components/WalletStatus";
 import { WalletConnectButton } from "@/components/WalletConnectButton";
 import { ProtectedRoute } from "@/components/protected-route";
+import type { Policy } from "@/services/types/policy.types";
 
 export default function PoliciesPage() {
   const { trackAction } = useAnalytics();
@@ -19,19 +20,43 @@ export default function PoliciesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const itemsPerPage = 9;
 
+  // Load policies from service
+  useEffect(() => {
+    const loadPolicies = async () => {
+      try {
+        setLoading(true);
+        const result = await policyService.getPolicies();
+        if (result.success) {
+          setPolicies(result.data.policies);
+        } else {
+          setError(result.error || 'Failed to load policies');
+        }
+      } catch (err) {
+        setError('Failed to load policies');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPolicies();
+  }, []);
+
   const filteredPolicies = useMemo(() => {
-    return mockPolicies.filter((policy) => {
+    return policies.filter((policy) => {
       const matchesTab = activeTab === 'all' || policy.status === activeTab;
       const matchesSearch =
         policy.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        policy.policyId.toLowerCase().includes(searchQuery.toLowerCase());
+        policy.policyNumber.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStatus = statusFilter === 'all' || policy.status === statusFilter;
       return matchesTab && matchesSearch && matchesStatus;
     });
-  }, [activeTab, searchQuery, statusFilter]);
+  }, [policies, activeTab, searchQuery, statusFilter]);
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
@@ -50,10 +75,10 @@ export default function PoliciesPage() {
   };
 
   const counts = {
-    all: mockPolicies.length,
-    active: mockPolicies.filter((p) => p.status === "active").length,
-    pending: mockPolicies.filter((p) => p.status === "pending").length,
-    expired: mockPolicies.filter((p) => p.status === "expired").length,
+    all: policies.length,
+    active: policies.filter((p) => p.status === "active").length,
+    pending: policies.filter((p) => p.status === "pending").length,
+    expired: policies.filter((p) => p.status === "expired").length,
   };
 
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -108,7 +133,7 @@ export default function PoliciesPage() {
                   Please connect your wallet to create and manage policies
                 </p>
               </div>
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <WalletConnectButton showBalance={true} />
               </div>
             </div>
@@ -126,7 +151,7 @@ export default function PoliciesPage() {
                   You're ready to create and manage policies
                 </p>
               </div>
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <WalletStatus showBalance={true} showAddress={false} compact={true} />
               </div>
             </div>
