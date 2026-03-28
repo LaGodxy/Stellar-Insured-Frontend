@@ -15,17 +15,30 @@ export interface WalletBalance {
     balance: number;
   }>;
   loading: boolean;
+  refreshing: boolean;
   error: string | null;
   lastUpdated: number | null;
 }
 
-export function useWalletBalance() {
+export interface UseWalletBalanceReturn extends WalletBalance {
+  refetch: () => Promise<void>;
+  isPollingActive: boolean;
+  pollingInterval: number;
+}
+
+// Configuration constants
+const POLLING_INTERVAL_MS = 30000; // 30 seconds
+const REFETCH_TIMEOUT_MS = 5000; // 5 seconds after transaction
+const OPTIMIZED_POLLING_INTERVAL_MS = 10000; // 10 seconds during high activity
+
+export function useWalletBalance(): UseWalletBalanceReturn {
   const { address, isConnected } = useWallet();
   const { showBalanceUpdated, showNetworkChanged } = useNotifications();
   const [balance, setBalance] = useState<WalletBalance>({
     xlm: 0,
     assets: [],
     loading: false,
+    refreshing: false,
     error: null,
     lastUpdated: null,
   });
@@ -33,19 +46,31 @@ export function useWalletBalance() {
   // Track previous balances to detect changes
   const prevXlmBalance = useRef(0);
   const prevAssets = useRef<{ code: string; issuer: string; balance: number }[]>([]);
+  
+  // Polling and activity tracking refs
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isHighActivityRef = useRef(false);
+  const lastTransactionTimeRef = useRef<number | null>(null);
+  const refetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchBalance = useCallback(async () => {
+  const fetchBalance = useCallback(async (isManualRefresh = false) => {
     if (!address || !isConnected) {
       setBalance(prev => ({
         ...prev,
         loading: false,
+        refreshing: false,
         error: !address ? 'No wallet connected' : 'Wallet not connected',
         lastUpdated: Date.now(),
       }));
       return;
     }
 
-    setBalance(prev => ({ ...prev, loading: true, error: null }));
+    setBalance(prev => ({ 
+      ...prev, 
+      loading: !isManualRefresh && prev.lastUpdated === null,
+      refreshing: isManualRefresh,
+      error: null 
+    }));
 
     try {
       // Use testnet for now, can be configured for mainnet
@@ -80,8 +105,8 @@ export function useWalletBalance() {
       prevXlmBalance.current = xlmBalance;
       prevAssets.current = assets;
 
-      // Show notification if balance changed
-      if (xlmChanged) {
+      // Show notification if balance changed (only for manual refresh or significant changes)
+      if (xlmChanged && (isManualRefresh || Math.abs(xlmBalance - prevXlmBalance.current) > 0.01)) {
         showBalanceUpdated(xlmBalance, 'XLM');
       }
 
@@ -98,28 +123,87 @@ export function useWalletBalance() {
       setBalance((prev: WalletBalance) => ({
         ...prev,
         loading: false,
+        refreshing: false,
         error: error instanceof Error ? error.message : 'Failed to fetch balance',
         lastUpdated: Date.now(),
       }));
     }
-  }, [address, isConnected]); // Removed notifications from deps to avoid circular dependency
+  }, [address, isConnected, showBalanceUpdated]);
 
-  // Poll for balance updates
+  /**
+   * Trigger balance refresh after transaction
+   * Automatically called when transactions are detected
+   */
+  const triggerPostTransactionRefresh = useCallback(() => {
+    lastTransactionTimeRef.current = Date.now();
+    
+    // Clear any existing timeout
+    if (refetchTimeoutRef.current) {
+      clearTimeout(refetchTimeoutRef.current);
+    }
+    
+    // Schedule a refetch in 5 seconds (after transaction likely confirms)
+    refetchTimeoutRef.current = setTimeout(() => {
+      fetchBalance();
+      
+      // Enable optimized polling for 2 minutes after transaction
+      isHighActivityRef.current = true;
+      
+      // Reset to normal polling after 2 minutes
+      setTimeout(() => {
+        isHighActivityRef.current = false;
+      }, 120000);
+    }, REFETCH_TIMEOUT_MS);
+  }, [fetchBalance]);
+
+  /**
+   * Manually refresh balance (called by user)
+   */
+  const manualRefresh = useCallback(async () => {
+    await fetchBalance(true);
+  }, [fetchBalance]);
+
+  // Poll for balance updates with adaptive interval
   useEffect(() => {
     if (!isConnected || !address) {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
       return;
     }
 
     // Initial fetch
     fetchBalance();
 
-    // Set up polling interval (every 30 seconds)
-    const interval = setInterval(fetchBalance, 30000);
+    // Clear any existing interval
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+
+    // Set up polling interval based on activity level
+    const interval = isHighActivityRef.current 
+      ? OPTIMIZED_POLLING_INTERVAL_MS 
+      : POLLING_INTERVAL_MS;
+    
+    pollingIntervalRef.current = setInterval(fetchBalance, interval);
 
     return () => {
-      clearInterval(interval);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
     };
   }, [isConnected, address, fetchBalance]);
+
+  // Clean up timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (refetchTimeoutRef.current) {
+        clearTimeout(refetchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Subscribe to network changes
   useEffect(() => {
@@ -139,6 +223,8 @@ export function useWalletBalance() {
 
   return {
     ...balance,
-    refetch: fetchBalance,
+    refetch: manualRefresh,
+    isPollingActive: pollingIntervalRef.current !== null,
+    pollingInterval: isHighActivityRef.current ? OPTIMIZED_POLLING_INTERVAL_MS : POLLING_INTERVAL_MS,
   };
 }

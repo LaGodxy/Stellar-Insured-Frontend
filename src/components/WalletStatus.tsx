@@ -1,7 +1,7 @@
 import { useWallet } from '@/hooks/useWallet';
 import { useWalletBalance } from '@/hooks/useWalletBalance';
 import { formatStellarAddress } from '@/lib/stellar';
-import { CopyIcon, ExternalLinkIcon } from 'lucide-react';
+import { CopyIcon, ExternalLinkIcon, RefreshCwIcon } from 'lucide-react';
 import { useState } from 'react';
 
 interface WalletStatusProps {
@@ -16,7 +16,7 @@ export function WalletStatus({
   compact = false 
 }: WalletStatusProps) {
   const { address, isConnected, isConnecting, status } = useWallet();
-  const { xlm, assets, loading: balanceLoading } = useWalletBalance();
+  const { xlm, assets, loading: balanceLoading, refreshing, refetch, lastUpdated } = useWalletBalance();
   const [copied, setCopied] = useState(false);
 
   if (!isConnected) {
@@ -29,6 +29,10 @@ export function WalletStatus({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  };
+
+  const handleRefreshBalance = async () => {
+    await refetch();
   };
 
   const explorerUrl = `https://stellar.expert/explorer/testnet/account/${address}`;
@@ -75,13 +79,28 @@ export function WalletStatus({
 
       {showBalance && !compact && (
         <div className="flex items-center gap-3 ml-2">
-          {balanceLoading ? (
-            <span className="text-gray-400 text-sm">Loading...</span>
+          {balanceLoading || refreshing ? (
+            <div className="flex items-center gap-2">
+              <RefreshCwIcon size={14} className="animate-spin text-sky-400" />
+              <span className="text-gray-400 text-sm">{refreshing ? 'Refreshing...' : 'Loading...'}</span>
+            </div>
           ) : (
             <>
-              <div className="text-gray-300">
-                <span className="font-mono">{xlm.toFixed(4)}</span>
-                <span className="ml-1 text-xs text-gray-400">XLM</span>
+              <div className="flex items-center gap-2">
+                <div className="text-gray-300">
+                  <span className="font-mono">{xlm.toFixed(4)}</span>
+                  <span className="ml-1 text-xs text-gray-400">XLM</span>
+                </div>
+                
+                {/* Manual refresh button */}
+                <button
+                  onClick={handleRefreshBalance}
+                  disabled={refreshing}
+                  className="text-gray-400 hover:text-sky-400 disabled:text-gray-600 transition-colors p-1 rounded"
+                  title="Refresh balance"
+                >
+                  <RefreshCwIcon size={14} className={refreshing ? 'animate-spin' : ''} />
+                </button>
               </div>
               
               {assets.length > 0 && (
@@ -98,6 +117,13 @@ export function WalletStatus({
               )}
             </>
           )}
+        </div>
+      )}
+      
+      {/* Last updated timestamp */}
+      {lastUpdated && !compact && (
+        <div className="text-xs text-gray-500 mt-1">
+          Updated {new Date(lastUpdated).toLocaleTimeString()}
         </div>
       )}
     </div>
